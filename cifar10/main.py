@@ -441,6 +441,7 @@ def eval_loop(encoder, file_to_update, ind=None):
 
 
 def main(args):
+    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
     fix_seed(args.seed)
     encoder, file_to_update = ssl_loop(args)
     accs = []
@@ -457,7 +458,7 @@ if __name__ == '__main__':
     parser.add_argument('--dim_proj', default='2048,2048', type=str)
     parser.add_argument('--dim_pred', default=512, type=int)
     parser.add_argument('--epochs', default=800, type=int)
-    parser.add_argument('--lr', default=0.03, type=float)
+    parser.add_argument('--lr', default=0.06, type=float)
     parser.add_argument('--bsz', default=512, type=int)
     parser.add_argument('--wd', default=0.0005, type=float)
     parser.add_argument('--loss', default='simclr', type=str, choices=['simclr', 'simsiam'])
@@ -465,10 +466,10 @@ if __name__ == '__main__':
     parser.add_argument('--warmup_epochs', default=10, type=int)
     parser.add_argument('--path_dir', default='../experiment', type=str)
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--lmbd', default=0.0, type=float)
+    parser.add_argument('--lmbd', default=0.4, type=float)
     parser.add_argument('--num_workers', default=16, type=int)
     parser.add_argument('--checkpoint_path', default=None, type=str)
-    parser.add_argument('--fp16', action='store_true')
+    parser.add_argument('--fp16', action='store_false')
     args = parser.parse_args()
 
     main(args)
