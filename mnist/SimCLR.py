@@ -320,7 +320,7 @@ def eval_loop(encoder, file_to_update, ind=None):
     ])
 
     train_loader = torch.utils.data.DataLoader(
-        dataset=torchvision.datasets.CIFAR10('../data', train=True, transform=train_transform, download=True),
+        dataset=torchvision.datasets.MNIST('../data', train=True, transform=train_transform, download=True),
         shuffle=True,
         batch_size=256,
         pin_memory=True,
@@ -328,7 +328,7 @@ def eval_loop(encoder, file_to_update, ind=None):
         drop_last=True
     )
     test_loader = torch.utils.data.DataLoader(
-        dataset=torchvision.datasets.CIFAR10('../data', train=False, transform=test_transform, download=True),
+        dataset=torchvision.datasets.MNIST('../data', train=False, transform=test_transform, download=True),
         shuffle=False,
         batch_size=256,
         pin_memory=True,
