@@ -26,14 +26,14 @@ class ContrastiveLearningTransform:
         transforms = [
             T.RandomResizedCrop(size=32, scale=(0.2, 1.0)),
             T.RandomHorizontalFlip(p=0.5),
-            # T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-            # T.RandomGrayscale(p=0.2)
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+            T.RandomGrayscale(p=0.2)
         ]
         transforms_rotation = [
             T.RandomResizedCrop(size=16, scale=(0.2, 1.0)),
             T.RandomHorizontalFlip(p=0.5),
-            # T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-            # T.RandomGrayscale(p=0.2)
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+            T.RandomGrayscale(p=0.2)
         ]
 
         self.transform = T.Compose(transforms)
@@ -199,7 +199,7 @@ def ssl_loop(args, encoder=None):
         num_workers=args.num_workers,
     )
     test_loader = torch.utils.data.DataLoader(
-        dataset=torchvision.datasets.CIFAR10(
+        dataset=torchvision.datasets.MNIST(
             '../data', train=False, transform=single_transform, download=True,
         ),
         shuffle=False,
