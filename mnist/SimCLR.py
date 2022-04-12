@@ -269,7 +269,7 @@ def ssl_loop(args, encoder=None):
                     loss += args.lmbd * rot_loss
                 return loss
 
-            # optimization step
+            # #optimization step
             if args.fp16:
                 with autocast():
                     loss = forward_step()
