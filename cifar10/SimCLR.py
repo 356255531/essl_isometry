@@ -3,14 +3,12 @@ import math
 import time
 import copy
 import argparse
-import random
 
 import numpy as np
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision.transforms.functional as FF
 from torch.cuda.amp import autocast, GradScaler
 
 import torchvision
@@ -18,8 +16,6 @@ import torchvision.transforms as T
 
 from resnet import resnet18
 from utils import knn_monitor, fix_seed
-
-from PIL import Image
 
 normalize = T.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
 single_transform = T.Compose([T.ToTensor(), normalize])
@@ -53,26 +49,25 @@ class ContrastiveLearningTransform:
 
 
 def rotate_images(images):
-    base_rotation_angles = [0, 360]
-    base_rotation_angle = float(torch.empty(1).uniform_(float(base_rotation_angles[0]), float(base_rotation_angles[1])).item())
-    fill = [float(0)] * FF.get_image_num_channels(images)
-    base_images = FF.rotate(images, base_rotation_angle, resample=Image.BILINEAR, expand=False, fill=fill)
-    rotated_angles = [float(random.random() * 30 - 15) for _ in range(6)]
-    rotated_images = [FF.rotate(base_images, angle, resample=Image.BILINEAR, expand=False, fill=fill) for angle in rotated_angles]
-    rotated_images = [base_images] + rotated_images
-    rotated_angles = [0] + rotated_angles
+    nimages = images.shape[0]
+    n_rot_images = 4 * nimages
 
-    rotated_images = torch.cat([torch.unsqueeze(rotated_img, dim=1) for rotated_img in rotated_images], dim=1)
-    rotated_angles = torch.tensor(rotated_angles).cuda()
-    return rotated_images, rotated_angles
+    # rotate images all 4 ways at once
+    rotated_images = torch.zeros([n_rot_images, images.shape[1], images.shape[2], images.shape[3]]).cuda()
+    rot_classes = torch.zeros([n_rot_images]).long().cuda()
 
+    rotated_images[:nimages] = images
+    # rotate 90
+    rotated_images[nimages:2 * nimages] = images.flip(3).transpose(2, 3)
+    rot_classes[nimages:2 * nimages] = 1
+    # rotate 180
+    rotated_images[2 * nimages:3 * nimages] = images.flip(3).flip(2)
+    rot_classes[2 * nimages:3 * nimages] = 2
+    # rotate 270
+    rotated_images[3 * nimages:4 * nimages] = images.transpose(2, 3).flip(3)
+    rot_classes[3 * nimages:4 * nimages] = 3
 
-def iso_loss_func(rotated_images, rotated_angles):
-    W = rotated_angles.repeat(rotated_angles.shape[0], 1)
-    W = torch.abs(W.T - W)
-    W = W / torch.sum(W, dim=1).reshape(-1, 1)
-    loss = F.mse_loss(torch.matmul(W, rotated_images), rotated_images)
-    return loss
+    return rotated_images, rot_classes
 
 
 def adjust_learning_rate(epochs, warmup_epochs, base_lr, optimizer, loader, step):
@@ -120,6 +115,20 @@ class ProjectionMLP(nn.Module):
         return self.net(x)
 
 
+class PredictionMLP(nn.Module):
+    def __init__(self, in_dim, hidden_dim, out_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(in_dim, hidden_dim, bias=False),
+            nn.BatchNorm1d(hidden_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(hidden_dim, out_dim),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class Branch(nn.Module):
     def __init__(self, args, encoder=None):
         super().__init__()
@@ -133,7 +142,13 @@ class Branch(nn.Module):
             self.encoder,
             self.projector
         )
-        self.projector2 = ProjectionMLP(512, dim_proj[0], dim_proj[1])
+        self.predictor2 = nn.Sequential(nn.Linear(512, 2048),
+                                        nn.LayerNorm(2048),
+                                        nn.ReLU(inplace=True),  # first layer
+                                        nn.Linear(2048, 2048),
+                                        nn.LayerNorm(2048),
+                                        nn.ReLU(inplace=True),
+                                        nn.Linear(2048, 4))  # output layer
 
     def forward(self, x):
         return self.net(x)
@@ -247,13 +262,11 @@ def ssl_loop(args, encoder=None):
                     raise
 
                 if args.lmbd > 0:
-                    x = inputs[2].cuda()
-                    rotated_images, rotated_angles = rotate_images(x)
-                    bb, g, c, h, w = rotated_images.shape
-                    b = backbone(rotated_images.reshape(bb * g, c, h, w))
-                    z_rotated = main_branch.projector2(b).reshape(bb, g, -1)
-                    iso_loss = iso_loss_func(z_rotated, rotated_angles)
-                    loss += args.lmbd * iso_loss
+                    rotated_images, rotated_labels = rotate_images(inputs[2])
+                    b = backbone(rotated_images)
+                    logits = main_branch.predictor2(b)
+                    rot_loss = F.cross_entropy(logits, rotated_labels)
+                    loss += args.lmbd * rot_loss
                 return loss
 
             # optimization step
@@ -395,7 +408,7 @@ def eval_loop(encoder, file_to_update, ind=None):
 
 
 def main(args):
-    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
     fix_seed(args.seed)
     encoder, file_to_update = ssl_loop(args)
     accs = []
@@ -420,7 +433,7 @@ if __name__ == '__main__':
     parser.add_argument('--warmup_epochs', default=10, type=int)
     parser.add_argument('--path_dir', default='../experiment', type=str)
     parser.add_argument('--seed', default=42, type=int)
-    parser.add_argument('--lmbd', default=0.4, type=float)
+    parser.add_argument('--lmbd', default=0.0, type=float)
     parser.add_argument('--num_workers', default=16, type=int)
     parser.add_argument('--checkpoint_path', default=None, type=str)
     parser.add_argument('--fp16', action='store_false')
